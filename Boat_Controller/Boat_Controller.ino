@@ -6,6 +6,7 @@
 
 // BEGIN RADIO DEFINITIONS
 #define BOAT_CONTROLLER
+#define BOAT_ADDRESS 0x01
 
 // SX1262 has the following connections:
 int DIO1_pin  = PC8;
@@ -80,14 +81,11 @@ int BLDC_TACHO_pin = PB10;
 int BLDC_ALARM_pin = PA9;
 int BLDC_ENABLE_pin = PA8;
 
-int bldc_speed_variable = 0; 
-bool bldc_direction_forwards = true;
-bool bldc_enable = false;
-
 HardwareTimer *bldcPWM;
 uint32_t bldc_channel;
 // END DRIVE MOTOR DEFINITIONS
 
+uint8_t boatAddress = BOAT_ADDRESS;
 
 void setup() {
   //SERVO PWM
@@ -106,7 +104,7 @@ void setup() {
   bldcPWM = new HardwareTimer(bldcInstance);
 
   bldcPWM->setMode(bldc_channel, TIMER_OUTPUT_COMPARE_PWM1, BLDC_SPEED_pin);
-  bldcPWM->setOverflow(10000, HERTZ_FORMAT);
+  bldcPWM->setOverflow(50000, HERTZ_FORMAT);
   bldcPWM->setCaptureCompare(bldc_channel, 0, PERCENT_COMPARE_FORMAT);
   bldcPWM->resume();
 
@@ -116,18 +114,8 @@ void setup() {
   pinMode(BLDC_TACHO_pin, INPUT);
   pinMode(BLDC_ALARM_pin, INPUT);
 
-  analogWrite(BLDC_SPEED_pin, 0); //0->255
   digitalWrite(BLDC_DIRECTION_pin, LOW);
   digitalWrite(BLDC_ENABLE_pin, HIGH); //LOW is enabled
-
-  
-  // digitalWrite(BLDC_ENABLE_pin, LOW);
-  // bldcPWM->setCaptureCompare(bldc_channel, 30, PERCENT_COMPARE_FORMAT);
-  // delay(5000);
-  // bldcPWM->setCaptureCompare(bldc_channel, 50, PERCENT_COMPARE_FORMAT);
-  // delay(5000);
-  // bldcPWM->setCaptureCompare(bldc_channel, 0, PERCENT_COMPARE_FORMAT);
-  digitalWrite(BLDC_ENABLE_pin, HIGH);
   
   Serial.begin(9600);
   delay(500);
@@ -208,11 +196,34 @@ void loop() {
       // packet was successfully received
       Serial.println(F("[SX1262] Received packet!"));
       Serial.print(F("[SX1262] Data:\t\t"));
-      uint32_t servoAngle_us = map(packetData[4], SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
-      servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT); // 7.5%
-      bldcPWM->setCaptureCompare(bldc_channel, packetData[3], PERCENT_COMPARE_FORMAT);
+      if(packetData[0] == boatAddress){
+        //Set the servo angle by first mapping the input angle to microseconds
+        uint32_t servoAngle_us = map(packetData[4], SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+        servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT); // 7.5%
+        
+        //Set the bldc PWM speed value
+        bldcPWM->setCaptureCompare(bldc_channel, packetData[3], PERCENT_COMPARE_FORMAT);
 
+        //Set the motor direction (bit 1)
+        bool directionBool = (packetData[2] & 0b00000001) != 0;
+        if(directionBool){
+          digitalWrite(BLDC_DIRECTION_pin, HIGH);
+        }
+        else{
+          digitalWrite(BLDC_DIRECTION_pin, LOW);
+        }
 
+        //Set the motor enable state (bit 2)
+        bool enableBool = (packetData[2] & 0b00000010) != 0;
+        if(enableBool){
+          digitalWrite(BLDC_ENABLE_pin, LOW);
+        }
+        else{
+          digitalWrite(BLDC_ENABLE_pin, HIGH);
+        }
+      }else{
+        Serial.println(F("Incorrect boat controller address received"));
+      }
 
       // print RSSI (Received Signal Strength Indicator)
       Serial.print(F("[SX1262] RSSI:\t\t"));
@@ -228,10 +239,6 @@ void loop() {
       Serial.print(F("[SX1262] Frequency error:\t"));
       Serial.print(radio.getFrequencyError());
       Serial.println(F(" Hz"));
-
-      digitalWrite(BLDC_ENABLE_pin, LOW);
-      delay(3000);
-      digitalWrite(BLDC_ENABLE_pin, HIGH);      
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
       // packet was received, but is malformed
