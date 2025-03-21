@@ -9,31 +9,33 @@ except serial.SerialException:
     ser = None
     print("Serial port not found or in use.")
 
-last_send_time = 0
-send_interval = 0.1  # 10 Hz (1/10 = 0.1 seconds)
+send_interval = 0.1  # 100 ms
+
+def send_serial_data():
+    if ser:
+        propeller_speed = slider1.get()
+        rudder_angle = slider2.get()
+        enable_val = enable_var.get()
+        address_val = int(address_spinbox.get())
+
+        mode = 0
+        direction = 1 if propeller_speed >= 0 else 0
+        byte2 = (direction & 0x01) | (enable_val << 1)
+        byte3 = abs(int(propeller_speed))
+        byte4 = int(rudder_angle)
+
+        serial_data = f"{address_val},{mode},{byte2},{byte3},{byte4}\n".encode()
+        ser.write(serial_data)
+        display_text(f"Sent: {serial_data.decode().strip()}")
+    root.after(int(send_interval * 1000), send_serial_data)  # Schedule next send
 
 def update_values():
-    global last_send_time
     propeller_speed = slider1.get()
     rudder_angle = slider2.get()
     enable_val = enable_var.get()
-    address_val = int(address_spinbox.get())  # Get address as integer
-
+    address_val = int(address_spinbox.get())
     label1.config(text=f"Propeller Speed: {propeller_speed}%")
     label2.config(text=f"Rudder Angle: {rudder_angle}°, Enable: {enable_val}, Address: {address_val}")
-
-    current_time = time.time()
-    if ser and (current_time - last_send_time) >= send_interval:
-        mode = 0  # Mode is always 0
-        direction = 1 if propeller_speed >= 0 else 0  # 1 for forward, 0 for reverse
-        byte2 = (direction & 0x01) | (enable_val << 1) # combine enable and direction into one byte.
-        byte3 = int(abs(propeller_speed))
-        byte4 = int(rudder_angle)
-
-        serial_data = f"{address_val},{mode},{byte2},{byte3},{byte4}\n".encode() #format serial data as comma separated integers.
-        ser.write(serial_data)
-        display_text(f"Sent: {serial_data.decode().strip()}") #display sent data
-        last_send_time = current_time
 
 def display_text(text):
     text_box.config(state=tk.NORMAL)
@@ -54,8 +56,16 @@ def read_serial():
             except UnicodeDecodeError:
                 display_text("Unicode Decode Error")
 
+def on_closing():
+    if ser:
+        final_data = f"{int(address_spinbox.get())},0,0,0,90\n".encode() #disable and zero speed before closing.
+        ser.write(final_data)
+        ser.close()
+    root.destroy()
+
 root = tk.Tk()
 root.title("Tkinter Serial GUI")
+root.protocol("WM_DELETE_WINDOW", on_closing) #call on_closing on exit.
 
 # Vertical Slider (Propeller Speed)
 slider1 = tk.Scale(root, from_=100, to=-100, orient=tk.VERTICAL, command=lambda x: update_values())
@@ -96,8 +106,6 @@ if ser:
     serial_thread = threading.Thread(target=read_serial)
     serial_thread.daemon = True
     serial_thread.start()
+    root.after(int(send_interval * 1000), send_serial_data) #start the periodic send.
 
 root.mainloop()
-
-if ser:
-    ser.close()
