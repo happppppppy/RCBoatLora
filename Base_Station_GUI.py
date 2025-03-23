@@ -9,7 +9,7 @@ except serial.SerialException:
     ser = None
     print("Serial port not found or in use.")
 
-send_interval = 0.1  # 100 ms
+send_interval = 0.25  # 100 ms
 
 def send_serial_data():
     if ser:

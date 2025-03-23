@@ -2,6 +2,7 @@
 #include <RadioLib.h>
 #include <SPI.h>
 #include <Arduino.h>
+#include <IWatchdog.h>
 
 
 // BEGIN RADIO DEFINITIONS
@@ -88,6 +89,7 @@ uint32_t bldc_channel;
 uint8_t boatAddress = BOAT_ADDRESS;
 
 void setup() {
+  IWatchdog.begin(4000000);
   //SERVO PWM
   TIM_TypeDef *servoInstance = (TIM_TypeDef *)pinmap_peripheral(digitalPinToPinName(SERVO_ANGLE_pin), PinMap_PWM);
   servo_channel = STM_PIN_CHANNEL(pinmap_function(digitalPinToPinName(SERVO_ANGLE_pin), PinMap_PWM));
@@ -139,7 +141,7 @@ void setup() {
 
 
   Serial.println(F("Setting Output Power"));
-  radio.setOutputPower(1);
+  radio.setOutputPower(20);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
@@ -147,55 +149,46 @@ void setup() {
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(9);
+  radio.setSpreadingFactor(8);
   // Serial.println(F("Setting Coding Rate"));
   // radio.setCodingRate(7);
 
-  
-  // start listening for LoRa packets on this node
-  state = radio.startTransmit("Boat controller initialised");
-  if (transmissionState == RADIOLIB_ERR_NONE) {
-      // packet was successfully sent
-      Serial.println(F("transmission finished!"));
-
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(transmissionState);
-    }
-
   state = radio.startReceive();
   if (state == RADIOLIB_ERR_NONE) {
-      Serial.println(F("Ready to receive"));
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(state);
-      while (true) { delay(10); }
-    }
+    Serial.println(F("Ready to receive"));
+  } else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
+    while (true) { delay(10); }
+  }
 
 }
 
 void loop() {
+  IWatchdog.reload();
   // check if the flag is set
   if(receivedFlag) {
-    // reset flag
-    receivedFlag = false;
 
     // you can read received data as an Arduino String
     byte packetData[5];
     int numBytes = radio.getPacketLength();
     int state = radio.readData(packetData, numBytes);
 
-    // you can also read received data as byte array
-    /*
-      byte byteArr[8];
-      int numBytes = radio.getPacketLength();
-      int state = radio.readData(byteArr, numBytes);
-    */
 
     if (state == RADIOLIB_ERR_NONE) {
       // packet was successfully received
       Serial.println(F("[SX1262] Received packet!"));
       Serial.print(F("[SX1262] Data:\t\t"));
+      Serial.print(packetData[0]);
+      Serial.print(",");
+      Serial.print(packetData[1]);
+      Serial.print(",");
+      Serial.print(packetData[2]);
+      Serial.print(",");
+      Serial.print(packetData[3]);
+      Serial.print(",");
+      Serial.println(packetData[4]);
+
       if(packetData[0] == boatAddress){
         //Set the servo angle by first mapping the input angle to microseconds
         uint32_t servoAngle_us = map(packetData[4], SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
@@ -221,24 +214,57 @@ void loop() {
         else{
           digitalWrite(BLDC_ENABLE_pin, HIGH);
         }
+
+        // print RSSI (Received Signal Strength Indicator)
+        Serial.print(F("[SX1262] RSSI:\t\t"));
+        Serial.print(radio.getRSSI());
+        Serial.println(F(" dBm"));
+
+        // print SNR (Signal-to-Noise Ratio)
+        Serial.print(F("[SX1262] SNR:\t\t"));
+        Serial.print(radio.getSNR());
+        Serial.println(F(" dB"));
+
+        //Send back the boat status
+        byte statusPacketData[5];
+
+        //Byte 1 is the boat address
+        //Byte 2 is the mode (UNUSED)
+        //Byte 3 is the alarm state
+        //Byte 4 is the tacho
+        //Byte 5 is RSSI
+        //Byte 6 is SNR 
+
+        statusPacketData[0] = (uint8_t)BOAT_ADDRESS;
+        statusPacketData[1] = 0;
+        statusPacketData[2] = (uint8_t)digitalRead(BLDC_ALARM_pin);
+        statusPacketData[3] = 0; //UNIMPLEMENTED
+        statusPacketData[4] = (uint8_t)abs(radio.getRSSI());
+        statusPacketData[5] = (uint8_t)abs(radio.getSNR());
+
+        state = radio.transmit(statusPacketData, 7);
+        if (transmissionState == RADIOLIB_ERR_NONE) {
+          // packet was successfully sent
+          Serial.println(F("Transmission finished."));
+        } else {
+          Serial.print(F("failed, code "));
+          Serial.println(transmissionState);
+          while (true) { delay(10); }
+        }
+
+        state = radio.startReceive();
+        if (state == RADIOLIB_ERR_NONE) {
+          Serial.println(F("Ready to receive."));
+        } else {
+          Serial.print(F("failed, code "));
+          Serial.println(state);
+          while (true) { delay(10); }
+        }
+
       }else{
         Serial.println(F("Incorrect boat controller address received"));
       }
 
-      // print RSSI (Received Signal Strength Indicator)
-      Serial.print(F("[SX1262] RSSI:\t\t"));
-      Serial.print(radio.getRSSI());
-      Serial.println(F(" dBm"));
-
-      // print SNR (Signal-to-Noise Ratio)
-      Serial.print(F("[SX1262] SNR:\t\t"));
-      Serial.print(radio.getSNR());
-      Serial.println(F(" dB"));
-
-      // print frequency error
-      Serial.print(F("[SX1262] Frequency error:\t"));
-      Serial.print(radio.getFrequencyError());
-      Serial.println(F(" Hz"));
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
       // packet was received, but is malformed
@@ -250,5 +276,8 @@ void loop() {
       Serial.println(state);
 
     }
+    
+    // reset flag
+    receivedFlag = false;
   }
 }

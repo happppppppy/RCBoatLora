@@ -1,6 +1,8 @@
 // include the library
 #include <RadioLib.h>
 #include <SPI.h>
+#include <Arduino.h>
+#include <IWatchdog.h>
 
 //Only change these macros to not break stuff :D
 #define BASE_STATION
@@ -25,6 +27,7 @@ SX1262 radio = new Module(NSS_pin, DIO1_pin, NRST_pin, BUSY_pin, SPI_2, spiSetti
 
 // save transmission states between loops
 int transmissionState = RADIOLIB_ERR_NONE;
+int receiveState = RADIOLIB_ERR_NONE;
 
 // flag to indicate transmission or reception state
 bool transmitFlag = false;
@@ -85,26 +88,11 @@ bool isNumeric(String str) {
 }
 
 void setup() {
-  // pinMode(DIO1_pin, INPUT);
-  // pinMode(BUSY_pin, INPUT);
-  // pinMode(NRST_pin, OUTPUT);
-  // pinMode(RXEN_pin, OUTPUT);
-  // pinMode(TXEN_pin, OUTPUT);
-
-  // digitalWrite(NRST_pin, HIGH);
-  // digitalWrite(RXEN_pin, LOW);
-  // digitalWrite(TXEN_pin, LOW);
-
-  
+  IWatchdog.begin(4000000);  
   Serial.begin(9600);
   delay(500);
   Serial.println(F("Starting SPI Bus"));
   SPI_2.begin();
-  // SPI_2.beginTransaction(spiSettings);
-  // SPI_2.transfer(0x52);
-  // delay(500);
-  // SPI_2.end();
-
 
   // initialize SX1262 with default settings
   Serial.println(F("[SX1262] Initializing ... "));
@@ -122,7 +110,7 @@ void setup() {
   radio.setDio1Action(setFlag);
 
   Serial.println(F("Setting Output Power"));
-  radio.setOutputPower(1);
+  radio.setOutputPower(20);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
@@ -130,27 +118,19 @@ void setup() {
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(9);
-  // Serial.println(F("Setting Coding Rate"));
-  // radio.setCodingRate(7);
+  radio.setSpreadingFactor(8);
 
-  #if defined(INITIATING_NODE)
-    // send the first packet on this node
-    Serial.print(F("[SX1262] Sending first packet ... "));
-    transmissionState = radio.startTransmit("Hello World!");
-    transmitFlag = true;
-  #else
-    // start listening for LoRa packets on this node
-    Serial.print(F("[SX1262] Starting to listen ... "));
-    state = radio.startReceive();
-    if (state == RADIOLIB_ERR_NONE) {
-      Serial.println(F("success!"));
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(state);
-      while (true) { delay(10); }
-    }
-  #endif
+
+  // start listening for LoRa packets on this node
+  Serial.print(F("[SX1262] Starting to listen ... "));
+  state = radio.startReceive();
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+  } else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
+    while (true) { delay(10); }
+  }
 
   Serial.println("Enter: Address,Mode,DirectionEnable,Speed,Angle (comma-separated)");
   Serial.println("Example: 1,2,3,100,90");
@@ -158,6 +138,7 @@ void setup() {
 }
 
 void loop() {
+  IWatchdog.reload();
   byte byteArray[5];
   if (Serial.available() > 0) {
     String inputString = Serial.readStringUntil('\n');
@@ -196,91 +177,62 @@ void loop() {
           byteArray[3] = speed;
           byteArray[4] = angle;
 
-          Serial.print("Byte Array: ");
-          Serial.println(byteArray[0]); 
-          Serial.println(byteArray[1]); 
-          Serial.println(byteArray[2]); 
-          Serial.println(byteArray[3]); 
-          Serial.println(byteArray[4]); 
+          Serial.print("Byte Array:\t\t");
+          Serial.print(byteArray[0]); 
+          Serial.print(",");
+          Serial.print(byteArray[1]); 
+          Serial.print(",");
+          Serial.print(byteArray[2]); 
+          Serial.print(",");
+          Serial.print(byteArray[3]); 
+          Serial.print(",");
+          Serial.print(byteArray[4]); 
           Serial.println();
 
           transmissionState = radio.transmit(byteArray, 5);
           if (transmissionState == RADIOLIB_ERR_NONE) {
             // packet was successfully sent
-            Serial.println(F("transmission finished!"));
+            Serial.println(F("Transmission finished."));
+            operationDone = false;
 
           } else {
             Serial.print(F("failed, code "));
             Serial.println(transmissionState);
           }
+
+          receiveState = radio.startReceive();
+          if (receiveState == RADIOLIB_ERR_NONE) {
+            Serial.println(F("Ready to receive"));
+          } else {
+            Serial.print(F("failed, code "));
+            Serial.println(receiveState);
+            while (true) { delay(10); }
+          }
+
         }
       }
     }
-
-
-
-
-    
   }
-
-
-  // check if the previous operation finished
-  // if(operationDone) {
-  //   // reset flag
-  //   operationDone = false;
-
-  //   if(transmitFlag) {
-  //     // the previous operation was transmission, listen for response
-  //     // print the result
-  //     if (transmissionState == RADIOLIB_ERR_NONE) {
-  //       // packet was successfully sent
-  //       Serial.println(F("transmission finished!"));
-
-  //     } else {
-  //       Serial.print(F("failed, code "));
-  //       Serial.println(transmissionState);
-
-  //     }
-
-  //     // listen for response
-  //     radio.startReceive();
-  //     transmitFlag = false;
-
-    // } else {
-    //   // the previous operation was reception
-    //   // print data and send another packet
-    //   String str;
-    //   int state = radio.readData(str);
-
-    //   if (state == RADIOLIB_ERR_NONE) {
-    //     // packet was successfully received
-    //     Serial.println(F("[SX1262] Received packet!"));
-
-    //     // print data of the packet
-    //     Serial.print(F("[SX1262] Data:\t\t"));
-    //     Serial.println(str);
-
-    //     // print RSSI (Received Signal Strength Indicator)
-    //     Serial.print(F("[SX1262] RSSI:\t\t"));
-    //     Serial.print(radio.getRSSI());
-    //     Serial.println(F(" dBm"));
-
-    //     // print SNR (Signal-to-Noise Ratio)
-    //     Serial.print(F("[SX1262] SNR:\t\t"));
-    //     Serial.print(radio.getSNR());
-    //     Serial.println(F(" dB"));
-
-    //   }
-
-    //   // wait a second before transmitting again
-    //   delay(1000);
-
-      // // send another one
-      // Serial.print(F("[SX1262] Sending another packet ... "));
-      // byte byteArr[] = {0x33};
-      // transmissionState = radio.startTransmit(byteArr, 1);
-      // transmitFlag = true;
-  //   }
   
-  // }
+  // check if the flag is set
+  if(operationDone) {
+
+    int numBytes = radio.getPacketLength();
+    byte packetData[numBytes];
+    int receiveState = radio.readData(packetData, numBytes);
+    Serial.print(F("[SX1262] Data:\t\t"));
+    Serial.print(packetData[0]);
+    Serial.print(",");
+    Serial.print(packetData[1]);
+    Serial.print(",");
+    Serial.print(packetData[2]);
+    Serial.print(",");
+    Serial.print(packetData[3]);
+    Serial.print(",");
+    Serial.print(packetData[4]);
+    Serial.print(",");
+    Serial.println(packetData[5]);
+
+    operationDone = false;
+  }
 }
