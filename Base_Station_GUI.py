@@ -58,6 +58,7 @@ def read_serial():
                 display_text("Unicode Decode Error")
 
 def on_closing():
+    
     if ser:
         final_data = f"{int(address_spinbox.get())},0,0,0,90\n".encode() #disable and zero speed before closing.
         ser.write(final_data)
