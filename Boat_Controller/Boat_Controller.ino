@@ -170,7 +170,7 @@ void loop() {
   if(receivedFlag) {
 
     // you can read received data as an Arduino String
-    byte packetData[5];
+    byte packetData[2];
     int numBytes = radio.getPacketLength();
     int state = radio.readData(packetData, numBytes);
 
@@ -181,24 +181,19 @@ void loop() {
       Serial.print(F("[SX1262] Data:\t\t"));
       Serial.print(packetData[0]);
       Serial.print(",");
-      Serial.print(packetData[1]);
-      Serial.print(",");
-      Serial.print(packetData[2]);
-      Serial.print(",");
-      Serial.print(packetData[3]);
-      Serial.print(",");
-      Serial.println(packetData[4]);
+      Serial.println(packetData[1]);
 
-      if(packetData[0] == boatAddress){
-        //Set the servo angle by first mapping the input angle to microseconds
-        uint32_t servoAngle_us = map(packetData[4], SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+      // if(packetData[0] == boatAddress){
+        //Set the servo angle by first mapping the input to angle then angle to microseconds
+  
+        uint32_t servoAngle_us = map(map((packetData[1] >> 1), 0, 127, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES) , SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
         servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT); // 7.5%
         
         //Set the bldc PWM speed value
-        bldcPWM->setCaptureCompare(bldc_channel, packetData[3], PERCENT_COMPARE_FORMAT);
+        bldcPWM->setCaptureCompare(bldc_channel, map((packetData[0] >> 1), 0,127,0,100), PERCENT_COMPARE_FORMAT);
 
         //Set the motor direction (bit 1)
-        bool directionBool = (packetData[2] & 0b00000001) != 0;
+        bool directionBool = (packetData[0] & 0b00000001) != 0;
         if(directionBool){
           digitalWrite(BLDC_DIRECTION_pin, HIGH);
         }
@@ -207,7 +202,7 @@ void loop() {
         }
 
         //Set the motor enable state (bit 2)
-        bool enableBool = (packetData[2] & 0b00000010) != 0;
+        bool enableBool = (packetData[1] & 0b00000010) != 0;
         if(enableBool){
           digitalWrite(BLDC_ENABLE_pin, LOW);
         }
@@ -261,9 +256,9 @@ void loop() {
           while (true) { delay(10); }
         }
 
-      }else{
-        Serial.println(F("Incorrect boat controller address received"));
-      }
+      // }else{
+      //   Serial.println(F("Incorrect boat controller address received"));
+      // }
 
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {

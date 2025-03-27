@@ -8,6 +8,13 @@
 #define BASE_STATION
 #define BOAT_ADDRESS 0x01
 
+// Joystick Pins
+int Left_Joystick_Y_pin = A2;
+int Left_Joystick_X_pin = A3;
+int Right_Joystick_Y_pin = A0;
+int Right_Joystick_X_pin = A1;
+int Right_Joystick_pushbutton_pin = PC15;
+
 
 // BEGIN RADIO DEFINITIONS
 // SX1262 has the following connections:
@@ -88,7 +95,14 @@ bool isNumeric(String str) {
 }
 
 void setup() {
-  IWatchdog.begin(4000000);  
+  IWatchdog.begin(4000000);
+  pinMode(Left_Joystick_X_pin, INPUT);
+  pinMode(Left_Joystick_Y_pin, INPUT);
+  pinMode(Right_Joystick_X_pin, INPUT);
+  pinMode(Right_Joystick_Y_pin, INPUT);
+  pinMode(Right_Joystick_pushbutton_pin, INPUT_PULLUP);
+
+
   Serial.begin(9600);
   delay(500);
   Serial.println(F("Starting SPI Bus"));
@@ -139,6 +153,18 @@ void setup() {
 
 void loop() {
   IWatchdog.reload();
+  // delay(250);
+  // Serial.print(" LX: ");
+  // Serial.print(analogRead(Left_Joystick_X_pin));
+  // Serial.print(" LY: ");
+  // Serial.print(analogRead(Left_Joystick_Y_pin));
+  // Serial.print(" RX: ");
+  // Serial.print(analogRead(Right_Joystick_X_pin));
+  // Serial.print(" RY: ");
+  // Serial.print(analogRead(Right_Joystick_Y_pin));
+  // Serial.print(" RPB: ");
+  // Serial.println(digitalRead(Right_Joystick_pushbutton_pin));
+
   byte byteArray[5];
   if (Serial.available() > 0) {
     String inputString = Serial.readStringUntil('\n');
