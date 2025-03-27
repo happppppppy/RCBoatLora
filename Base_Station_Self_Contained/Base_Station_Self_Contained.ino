@@ -60,8 +60,11 @@ void setFlag(void) {
 uint8_t motorPower;
 uint8_t rudderAngle;
 uint8_t direction;
-uint8_t enable;
+uint8_t enable = 0x01;
 uint8_t address;
+
+const int16_t motorJoystickVal_midpoint = 525;
+int16_t motorJoystickVal;
 
 void setup() {
   IWatchdog.begin(4000000);
@@ -96,7 +99,7 @@ void setup() {
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(250);
+  radio.setBandwidth(62.5);
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
@@ -120,21 +123,36 @@ void setup() {
 
 void loop() {
   IWatchdog.reload();
-  delay(200);
 
-  motorPower = map(analogRead(Left_Joystick_Y_pin), 0, 1023, -127, 127);
-  rudderAngle = map(analogRead(Right_Joystick_X_pin), 0, 1023, 0, 127);
-  if(motorPower < 0){
-    direction = 0x00;
-  }
-  else{
+  motorJoystickVal = analogRead(Left_Joystick_Y_pin);
+
+  if(motorJoystickVal < motorJoystickVal_midpoint){
     direction = 0x01;
+    motorPower = map(motorJoystickVal, motorJoystickVal_midpoint - 1, 0, 0, 127);
+  } else {
+    direction = 0x00;
+    motorPower = map(motorJoystickVal, motorJoystickVal_midpoint, 1023, 0, 127);
   }
-  motorPower = abs(motorPower);
+
+  Serial.println(motorPower);
+  
+  rudderAngle = map(analogRead(Right_Joystick_X_pin), 0, 1023, 127, 0);
 
   uint8_t packet[2];
   packet[0] = (motorPower << 1) | direction;
   packet[1] = (rudderAngle << 1) | enable;
+  
+  
+  Serial.print("Raw: ");
+  Serial.print(motorJoystickVal);
+  Serial.print(" Scaled: ");
+  Serial.print(motorPower);
+  Serial.print(" Dir: ");
+  Serial.println(direction);
+  Serial.print(" Rudder: ");
+  Serial.println(rudderAngle);
+  Serial.print(" Enable: ");
+  Serial.println(enable);
 
   transmissionState = radio.transmit(packet, 2);
   if (transmissionState == RADIOLIB_ERR_NONE) {
