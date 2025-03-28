@@ -144,15 +144,15 @@ void setup() {
 
 
   Serial.println(F("Setting Output Power"));
-  radio.setOutputPower(20);
+  radio.setOutputPower(22);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(500);
+  radio.setBandwidth(125);
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(8);
+  radio.setSpreadingFactor(9);
   // Serial.println(F("Setting Coding Rate"));
   // radio.setCodingRate(7);
 
@@ -225,7 +225,7 @@ void loop() {
       Serial.println(F(" dB"));
 
       // //Send back the boat status
-      // byte statusPacketData[5];
+      byte statusPacketData[2];
 
       // //Byte 1 is the boat address
       // //Byte 2 is the mode (UNUSED)
@@ -238,17 +238,18 @@ void loop() {
       // statusPacketData[1] = 0;
       // statusPacketData[2] = (uint8_t)digitalRead(BLDC_ALARM_pin);
       // statusPacketData[3] = 0;  //UNIMPLEMENTED
-      // statusPacketData[4] = (uint8_t)abs(radio.getRSSI());
-      // statusPacketData[5] = (uint8_t)abs(radio.getSNR());
+      statusPacketData[0] = (uint8_t)abs(radio.getRSSI());
+      statusPacketData[1] = (uint8_t)abs(radio.getSNR());
 
-      // state = radio.transmit(statusPacketData, 7);
-      // if (transmissionState == RADIOLIB_ERR_NONE) {
-      //   // packet was successfully sent
-      //   Serial.println(F("Transmission finished."));
-      // } else {
-      //   Serial.print(F("failed, code "));
-      //   Serial.println(transmissionState);
-      // }
+      state = radio.transmit(statusPacketData, 2);
+      if (transmissionState == RADIOLIB_ERR_NONE) {
+        // packet was successfully sent
+        Serial.println(F("Transmission finished."));
+      } else {
+        Serial.print(F("failed, code "));
+        Serial.println(transmissionState);
+      }
+      
 
       state = radio.startReceive();
       // if (state == RADIOLIB_ERR_NONE) {

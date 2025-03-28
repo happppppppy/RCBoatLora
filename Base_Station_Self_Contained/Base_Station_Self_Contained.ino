@@ -95,15 +95,15 @@ void setup() {
   radio.setDio1Action(setFlag);
 
   Serial.println(F("Setting Output Power"));
-  radio.setOutputPower(20);
+  radio.setOutputPower(22);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(500);
+  radio.setBandwidth(125);
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(8);
+  radio.setSpreadingFactor(9);
 
   // start listening for LoRa packets on this node
   Serial.print(F("[SX1262] Starting to listen ... "));
@@ -134,7 +134,7 @@ void loop() {
     motorPower = map(motorJoystickVal, motorJoystickVal_midpoint, 1023, 0, 127);
   }
 
-  Serial.println(motorPower);
+  // Serial.println(motorPower);
   
   rudderAngle = map(analogRead(Right_Joystick_X_pin), 0, 1023, 127, 0);
 
@@ -143,16 +143,16 @@ void loop() {
   packet[1] = (rudderAngle << 1) | enable;
   
   
-  Serial.print("Raw: ");
-  Serial.print(motorJoystickVal);
-  Serial.print(" Scaled: ");
-  Serial.print(motorPower);
-  Serial.print(" Dir: ");
-  Serial.println(direction);
-  Serial.print(" Rudder: ");
-  Serial.println(rudderAngle);
-  Serial.print(" Enable: ");
-  Serial.println(enable);
+  // Serial.print("Raw: ");
+  // Serial.print(motorJoystickVal);
+  // Serial.print(" Scaled: ");
+  // Serial.print(motorPower);
+  // Serial.print(" Dir: ");
+  // Serial.println(direction);
+  // Serial.print(" Rudder: ");
+  // Serial.println(rudderAngle);
+  // Serial.print(" Enable: ");
+  // Serial.println(enable);
 
   transmissionState = radio.transmit(packet, 2);
   if (transmissionState == RADIOLIB_ERR_NONE) {
@@ -166,33 +166,25 @@ void loop() {
     while (true) { delay(10); } //Holding in this delay loop allows the watchdog to reset the controller.
   }
 
-  // check if the flag is set
-  if(operationDone) {
 
-    int numBytes = radio.getPacketLength();
-    byte packetData[numBytes];
-    int receiveState = radio.readData(packetData, numBytes);
-    Serial.print(F("[SX1262] Data:\t\t"));
-    Serial.print(packetData[0]);
-    Serial.print(",");
-    Serial.print(packetData[1]);
-    Serial.print(",");
-    Serial.print(packetData[2]);
-    Serial.print(",");
-    Serial.print(packetData[3]);
-    Serial.print(",");
-    Serial.print(packetData[4]);
-    Serial.print(",");
-    Serial.println(packetData[5]);
+  // check if the flag is se
+  byte packetData[2];
+  receiveState = radio.receive(packetData, 2);
+  Serial.write(27);       // ESC command
+  Serial.print("[2J");    // clear screen command
+  Serial.write(27);
+  Serial.print("[H");     // cursor to home command
 
-    operationDone = false;
-    receiveState = radio.startReceive();
-      if (receiveState == RADIOLIB_ERR_NONE) {
-    Serial.println(F("Ready to receive"));
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(receiveState);
-      while (true) { delay(10); } //Holding in this delay loop allows the watchdog to reset the controller.
-    }
-  }
+  Serial.print(F("Boat RSSI: "));
+  Serial.print(packetData[0]);
+  Serial.print(" dBm, SNR: ");
+  Serial.print(packetData[1]);
+  Serial.println(F(" dBm"));
+
+  // print RSSI (Received Signal Strength Indicator)
+  Serial.print(F("Base RSSI:"));
+  Serial.print(radio.getRSSI());
+  Serial.print(F(" dBm, SNR: "));
+  Serial.print(radio.getSNR());
+  Serial.println(F(" dB"));
 }
