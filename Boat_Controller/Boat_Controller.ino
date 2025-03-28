@@ -57,6 +57,9 @@ void setFlag(void) {
 #define SERVO_MAX_MICROSECOND 2500  //(12.5% duty at 50Hz = 2.5ms)
 #define SERVO_MIN_MICROSECOND 500   //(2.5% duty at 50Hz = 0.5ms)
 
+int upperMicrosecondLimit = map(SERVO_ANGLE_LIMIT_UPPER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+int lowerMicrosecondLimit = map(SERVO_ANGLE_LIMIT_LOWER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+
 HardwareTimer *servoPWM;
 uint32_t servo_channel;
 
@@ -106,7 +109,7 @@ void setup() {
   bldcPWM = new HardwareTimer(bldcInstance);
 
   bldcPWM->setMode(bldc_channel, TIMER_OUTPUT_COMPARE_PWM1, BLDC_SPEED_pin);
-  bldcPWM->setOverflow(50000, HERTZ_FORMAT);
+  bldcPWM->setOverflow(10000, HERTZ_FORMAT);
   bldcPWM->setCaptureCompare(bldc_channel, 0, PERCENT_COMPARE_FORMAT);
   bldcPWM->resume();
 
@@ -141,11 +144,11 @@ void setup() {
 
 
   Serial.println(F("Setting Output Power"));
-  radio.setOutputPower(2);
+  radio.setOutputPower(20);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(62.5);
+  radio.setBandwidth(500);
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
@@ -188,7 +191,7 @@ void loop() {
       // if(packetData[0] == boatAddress){
       //Set the servo angle by first mapping the input to angle then angle to microseconds
 
-      uint32_t servoAngle_us = map(map((packetData[1] >> 1), 0, 127, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES), SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+      uint32_t servoAngle_us = map((packetData[1] >> 1), 0, 127, lowerMicrosecondLimit, upperMicrosecondLimit);
       servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT);  // 7.5%
 
       //Set the bldc PWM speed value
@@ -265,7 +268,7 @@ void loop() {
       radio.reset();
       radio.setOutputPower(2);
       radio.setFrequency(915);
-      radio.setBandwidth(250);
+      radio.setBandwidth(500);
       radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
       radio.setSpreadingFactor(8);
       radio.setPacketReceivedAction(setFlag);

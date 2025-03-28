@@ -99,7 +99,7 @@ void setup() {
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(62.5);
+  radio.setBandwidth(500);
   Serial.println(F("Setting RF Switch Pins"));
   radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
