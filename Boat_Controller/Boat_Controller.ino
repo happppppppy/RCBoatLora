@@ -13,8 +13,8 @@
 int DIO1_pin = PA10;
 int NRST_pin = PB5;
 int BUSY_pin = PB3;
-int RXEN_pin = PC14;
-int TXEN_pin = PA0;
+int RXEN_pin = PA11;
+int TXEN_pin = PA12;
 int MOSI_pin = PB15;
 int MISO_pin = PB14;
 int SCK_pin = PB13;
@@ -79,11 +79,11 @@ int scale_angle(int angle) {
 #define BLDC_MAX_SPEED_PCT 100
 #define BLDC_MIN_SPEED_PCT 0
 
-int BLDC_SPEED_pin = PB0;
-int BLDC_DIRECTION_pin = PA4;
-int BLDC_TACHO_pin = PA1;
-int BLDC_ALARM_pin = PC0;
-int BLDC_ENABLE_pin = PC1;
+int BLDC_SPEED_pin = PA7;
+int BLDC_DIRECTION_pin = PA6;
+int BLDC_TACHO_pin = PC7;
+int BLDC_ALARM_pin = PB6;
+int BLDC_ENABLE_pin = PA9;
 
 HardwareTimer *bldcPWM;
 uint32_t bldc_channel;
@@ -127,6 +127,7 @@ void setup() {
   Serial.println(F("Starting SPI Bus"));
   SPI_2.begin();
 
+
   // initialize SX1262 with default settings
   Serial.println(F("[SX1262] Initializing ... "));
   int state = radio.begin();
@@ -141,16 +142,15 @@ void setup() {
   // set the function that will be called
   // when new packet is received
   radio.setPacketReceivedAction(setFlag);
-
-
+  Serial.println(F("Setting RF Switch Pins"));
+  radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
+  radio.setRegulatorLDO();
   Serial.println(F("Setting Output Power"));
   radio.setOutputPower(22);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
   radio.setBandwidth(125);
-  Serial.println(F("Setting RF Switch Pins"));
-  radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
   Serial.println(F("Setting Spreading Factor"));
   radio.setSpreadingFactor(9);
   // Serial.println(F("Setting Coding Rate"));

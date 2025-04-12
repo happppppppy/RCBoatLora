@@ -147,7 +147,7 @@ void loop() {
   // Serial.print(motorJoystickVal);
   // Serial.print(" Scaled: ");
   // Serial.print(motorPower);
-  // Serial.print(" Dir: ");
+  // Serial.print(" Dir:        ");
   // Serial.println(direction);
   // Serial.print(" Rudder: ");
   // Serial.println(rudderAngle);
