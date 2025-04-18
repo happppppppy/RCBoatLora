@@ -3,7 +3,16 @@
 #include <SPI.h>
 #include <Arduino.h>
 #include <IWatchdog.h>
+#include <cmath>
 
+
+const int HV_BATT_VOLT_pin = PA0;
+const uint32_t adcResolution = 4096; // For 12-bit ADC (typical for STM32)
+const uint32_t vref_mv = 3300;    // Reference voltage in mV (check your STM32 board)
+
+// Define voltage divider resistor values (in ohms)
+const uint32_t r1 = 220000;
+const uint32_t r2 = 30000;
 
 // BEGIN RADIO DEFINITIONS
 #define BOAT_CONTROLLER
@@ -23,12 +32,6 @@ int NSS_pin = PB12;
 SPIClass SPI_2(MOSI_pin, MISO_pin, SCK_pin);
 SPISettings spiSettings(2000000, MSBFIRST, SPI_MODE0);
 SX1262 radio = new Module(NSS_pin, DIO1_pin, NRST_pin, BUSY_pin, SPI_2, spiSettings);
-
-// save transmission states between loops
-int transmissionState = RADIOLIB_ERR_NONE;
-
-// flag to indicate transmission or reception state
-bool transmitFlag = false;
 
 // flag to indicate that a packet was sent or received
 volatile bool receivedFlag = false;
@@ -53,12 +56,14 @@ void setFlag(void) {
 #define SERVO_MIN_ANGLE_DEGREES 0
 #define SERVO_MAX_ANGLE_DEGREES 180
 #define SERVO_ANGLE_LIMIT_LOWER_DEGREES 45
+#define SERVO_ANGLE_CENTER_DEGREES 90
 #define SERVO_ANGLE_LIMIT_UPPER_DEGREES 135
 #define SERVO_MAX_MICROSECOND 2500  //(12.5% duty at 50Hz = 2.5ms)
 #define SERVO_MIN_MICROSECOND 500   //(2.5% duty at 50Hz = 0.5ms)
 
 int upperMicrosecondLimit = map(SERVO_ANGLE_LIMIT_UPPER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
 int lowerMicrosecondLimit = map(SERVO_ANGLE_LIMIT_LOWER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
+int middleMicrosecond = map(SERVO_ANGLE_CENTER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
 
 HardwareTimer *servoPWM;
 uint32_t servo_channel;
@@ -91,6 +96,31 @@ uint32_t bldc_channel;
 
 uint8_t boatAddress = BOAT_ADDRESS;
 
+uint32_t mapParabolicCentered(uint8_t inputVal, uint32_t inputMin, uint32_t inputMid, uint32_t inputMax, uint32_t outputMin, uint32_t outputMid, uint32_t outputMax) {
+  float parabolaCurveFactor = 1.0; // You can adjust this factor (though in the simplest parabola it's 1)
+  float normalizedDistanceFromCenter;
+  float parabolicOutput;
+
+  if (inputVal <= inputMid) {
+    // Map the lower half (0 to 64)
+    normalizedDistanceFromCenter = static_cast<float>(inputMid - inputVal) / (inputMid - inputMin);
+    parabolicOutput = normalizedDistanceFromCenter * normalizedDistanceFromCenter; // y = x^2
+    return static_cast<uint32_t>(outputMid - parabolicOutput * (outputMid - outputMin));
+  } else {
+    // Map the upper half (65 to 127)
+    normalizedDistanceFromCenter = static_cast<float>(inputVal - inputMid) / (inputMax - inputMid);
+    parabolicOutput = normalizedDistanceFromCenter * normalizedDistanceFromCenter; // y = x^2
+    return static_cast<uint32_t>(outputMid + parabolicOutput * (outputMax - outputMid));
+  }
+}
+
+uint32_t mapParabolicNonCentered(uint32_t inputValue, uint32_t inputMin, uint32_t inputMax, uint32_t outputMin, uint32_t outputMax) {
+  float parabolaCurveFactor = 1.0; // You can adjust this factor (though in the simplest parabola it's 1)
+  float normalizedInput = static_cast<float>(inputValue - inputMin) / (inputMax - inputMin);
+  float parabolicOutput = pow(normalizedInput, parabolaCurveFactor);
+  return static_cast<uint32_t>(parabolicOutput * (outputMax - outputMin) + outputMin);
+}
+
 void setup() {
   IWatchdog.begin(4000000);
   //SERVO PWM
@@ -118,6 +148,8 @@ void setup() {
   pinMode(BLDC_ENABLE_pin, OUTPUT);
   pinMode(BLDC_TACHO_pin, INPUT);
   pinMode(BLDC_ALARM_pin, INPUT);
+
+  // pinMode(HV_BATT_VOLT_pin, INPUT);
 
   digitalWrite(BLDC_DIRECTION_pin, LOW);
   digitalWrite(BLDC_ENABLE_pin, HIGH);  //LOW is enabled
@@ -150,11 +182,10 @@ void setup() {
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(125);
+  radio.setBandwidth(250);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(9);
-  // Serial.println(F("Setting Coding Rate"));
-  // radio.setCodingRate(7);
+  radio.setSpreadingFactor(7);
+
 
   state = radio.startReceive();
   if (state == RADIOLIB_ERR_NONE) {
@@ -168,34 +199,41 @@ void setup() {
 
 void loop() {
   IWatchdog.reload();
+  // uint32_t battery_voltage = analogRead(HV_BATT_VOLT_pin);
+  // uint32_t adcRawValue = analogRead(HV_BATT_VOLT_pin);
+  // uint32_t vAdc_mV_numerator = adcRawValue * vref_mv;
+  // uint32_t vAdc_mV = vAdc_mV_numerator / adcResolution;
+
+  // uint32_t vBattery_mV_numerator = vAdc_mV * (r1 + r2);
+  // uint32_t vBattery_mV = vBattery_mV_numerator / r2;
+
+  // Serial.println(vBattery_mV);
   // check if the flag is set
   if (receivedFlag) {
 
     // you can read received data as an Arduino String
     byte packetData[2];
     int state = radio.readData(packetData, 2);
-    // int state = radio.receive(packetData, 2);
-
 
     if (state == RADIOLIB_ERR_NONE) {
       // packet was successfully received
-      Serial.println(F("[SX1262] Received packet!"));
-      Serial.print(F("[SX1262] Data:\t\t"));
-      Serial.print(packetData[0] >> 1);
-      Serial.print(",");
-      Serial.print(packetData[0] & 0b0000001);
-      Serial.print(",");
-      Serial.print(packetData[1] >> 1);
-      Serial.println(packetData[1] & 0b0000001);
+      // Serial.println(F("[SX1262] Received packet!"));
+      // Serial.print(F("[SX1262] Data:\t\t"));
+      // Serial.print(packetData[0] >> 1);
+      // Serial.print(",");
+      // Serial.print(packetData[0] & 0b0000001);
+      // Serial.print(",");
+      // Serial.print(packetData[1] >> 1);
+      // Serial.println(packetData[1] & 0b0000001);
 
       // if(packetData[0] == boatAddress){
-      //Set the servo angle by first mapping the input to angle then angle to microseconds
-
-      uint32_t servoAngle_us = map((packetData[1] >> 1), 0, 127, lowerMicrosecondLimit, upperMicrosecondLimit);
+      uint32_t servoAngle_us = mapParabolicCentered((packetData[1] >> 1), 0, 64, 127, lowerMicrosecondLimit, middleMicrosecond, upperMicrosecondLimit);
       servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT);  // 7.5%
 
       //Set the bldc PWM speed value
-      uint16_t bldcPct = map((packetData[0] >> 1), 0, 127, 0, 100);
+      // uint16_t bldcPct = map((packetData[0] >> 1), 0, 127, 0, 100);
+      uint32_t bldcPct = mapParabolicNonCentered((packetData[0] >> 1), 0, 127, 0, 100);
+      
       bldcPWM->setCaptureCompare(bldc_channel, bldcPct, PERCENT_COMPARE_FORMAT);
 
       //Set the motor direction (bit 1)
@@ -213,16 +251,6 @@ void loop() {
       } else {
         digitalWrite(BLDC_ENABLE_pin, HIGH);
       }
-
-      // print RSSI (Received Signal Strength Indicator)
-      Serial.print(F("[SX1262] RSSI:\t\t"));
-      Serial.print(radio.getRSSI());
-      Serial.println(F(" dBm"));
-
-      // print SNR (Signal-to-Noise Ratio)
-      Serial.print(F("[SX1262] SNR:\t\t"));
-      Serial.print(radio.getSNR());
-      Serial.println(F(" dB"));
 
       // //Send back the boat status
       byte statusPacketData[2];
@@ -242,44 +270,25 @@ void loop() {
       statusPacketData[1] = (uint8_t)abs(radio.getSNR());
 
       state = radio.transmit(statusPacketData, 2);
-      if (transmissionState == RADIOLIB_ERR_NONE) {
-        // packet was successfully sent
-        Serial.println(F("Transmission finished."));
-      } else {
+      if (state != RADIOLIB_ERR_NONE) {
         Serial.print(F("failed, code "));
-        Serial.println(transmissionState);
+        Serial.println(state);
       }
       
-
       state = radio.startReceive();
-      // if (state == RADIOLIB_ERR_NONE) {
-      //   Serial.println(F("Ready to receive."));
-      // } else {
-      //   Serial.print(F("failed, code "));
-      //   Serial.println(state);
-      // }
 
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-      // packet was received, but is malformed
       Serial.println(F("CRC error!"));
 
-
     } else if (state == RADIOLIB_ERR_SPI_CMD_TIMEOUT) {
-
-      radio.reset();
-      radio.setOutputPower(2);
-      radio.setFrequency(915);
-      radio.setBandwidth(500);
-      radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
-      radio.setSpreadingFactor(8);
-      radio.setPacketReceivedAction(setFlag);
-      radio.begin();
-    }
-
-    else {
+      Serial.print(F("failed, code "));
+      Serial.println(state);
+      while(true){}
+    } else {
       // some other error occurred
       Serial.print(F("failed, code "));
       Serial.println(state);
+      while(true){}
     }
 
     receivedFlag = false;

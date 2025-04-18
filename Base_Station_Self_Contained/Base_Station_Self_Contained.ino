@@ -93,17 +93,17 @@ void setup() {
   // set the function that will be called
   // when new packet is received
   radio.setDio1Action(setFlag);
-
+  Serial.println(F("Setting RF Switch Pins"));
+  radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
+  radio.setRegulatorLDO();
   Serial.println(F("Setting Output Power"));
   radio.setOutputPower(22);
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(125);
-  Serial.println(F("Setting RF Switch Pins"));
-  radio.setRfSwitchPins(RXEN_pin, TXEN_pin);
+  radio.setBandwidth(250);
   Serial.println(F("Setting Spreading Factor"));
-  radio.setSpreadingFactor(9);
+  radio.setSpreadingFactor(7);
 
   // start listening for LoRa packets on this node
   Serial.print(F("[SX1262] Starting to listen ... "));
