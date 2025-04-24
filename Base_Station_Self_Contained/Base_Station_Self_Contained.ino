@@ -101,7 +101,7 @@ void setup() {
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(250);
+  radio.setBandwidth(62.5);
   Serial.println(F("Setting Spreading Factor"));
   radio.setSpreadingFactor(7);
 

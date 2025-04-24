@@ -29,6 +29,16 @@ int MISO_pin = PB14;
 int SCK_pin = PB13;
 int NSS_pin = PB12;
 
+#define SERVO_ANGLE_pin PB8
+uint32_t servoAngle_us = 0;
+
+
+int BLDC_SPEED_pin = PA7;
+int BLDC_DIRECTION_pin = PA6;
+int BLDC_TACHO_pin = PC7;
+int BLDC_ALARM_pin = PB6;
+int BLDC_ENABLE_pin = PA9;
+
 SPIClass SPI_2(MOSI_pin, MISO_pin, SCK_pin);
 SPISettings spiSettings(2000000, MSBFIRST, SPI_MODE0);
 SX1262 radio = new Module(NSS_pin, DIO1_pin, NRST_pin, BUSY_pin, SPI_2, spiSettings);
@@ -51,7 +61,6 @@ void setFlag(void) {
 // END RADIO DEFINITIONS
 
 // BEGIN SERVO DEFINITIONS
-#define SERVO_ANGLE_pin PB8
 
 #define SERVO_MIN_ANGLE_DEGREES 0
 #define SERVO_MAX_ANGLE_DEGREES 180
@@ -59,6 +68,7 @@ void setFlag(void) {
 #define SERVO_ANGLE_CENTER_DEGREES 90
 #define SERVO_ANGLE_LIMIT_UPPER_DEGREES 135
 #define SERVO_MAX_MICROSECOND 2500  //(12.5% duty at 50Hz = 2.5ms)
+#define SERVO_MID_MICROSECOND 1500  //Used for setting direction to zero on timeout
 #define SERVO_MIN_MICROSECOND 500   //(2.5% duty at 50Hz = 0.5ms)
 
 int upperMicrosecondLimit = map(SERVO_ANGLE_LIMIT_UPPER_DEGREES, SERVO_MIN_ANGLE_DEGREES, SERVO_MAX_ANGLE_DEGREES, SERVO_MIN_MICROSECOND, SERVO_MAX_MICROSECOND);
@@ -84,11 +94,6 @@ int scale_angle(int angle) {
 #define BLDC_MAX_SPEED_PCT 100
 #define BLDC_MIN_SPEED_PCT 0
 
-int BLDC_SPEED_pin = PA7;
-int BLDC_DIRECTION_pin = PA6;
-int BLDC_TACHO_pin = PC7;
-int BLDC_ALARM_pin = PB6;
-int BLDC_ENABLE_pin = PA9;
 
 HardwareTimer *bldcPWM;
 uint32_t bldc_channel;
@@ -121,8 +126,22 @@ uint32_t mapParabolicNonCentered(uint32_t inputValue, uint32_t inputMin, uint32_
   return static_cast<uint32_t>(parabolicOutput * (outputMax - outputMin) + outputMin);
 }
 
+volatile bool RxWatchdogTimeout = false;
+void RxWatchdogTimer_IT_callback(void){
+  RxWatchdogTimeout = true;
+}
+
+HardwareTimer *RxWatchdogTimer;
+
 void setup() {
   IWatchdog.begin(4000000);
+
+  RxWatchdogTimer = new HardwareTimer(TIM5);
+  RxWatchdogTimer->setMode(1,TIMER_OUTPUT_DISABLED);
+  RxWatchdogTimer->setPrescaleFactor(0);
+  RxWatchdogTimer->setOverflow(4000000, MICROSEC_FORMAT);
+  RxWatchdogTimer->attachInterrupt(RxWatchdogTimer_IT_callback);
+  RxWatchdogTimer->resume();
   //SERVO PWM
   TIM_TypeDef *servoInstance = (TIM_TypeDef *)pinmap_peripheral(digitalPinToPinName(SERVO_ANGLE_pin), PinMap_PWM);
   servo_channel = STM_PIN_CHANNEL(pinmap_function(digitalPinToPinName(SERVO_ANGLE_pin), PinMap_PWM));
@@ -182,7 +201,7 @@ void setup() {
   Serial.println(F("Setting Frequency"));
   radio.setFrequency(915);
   Serial.println(F("Setting Bandwidth"));
-  radio.setBandwidth(250);
+  radio.setBandwidth(62.5);
   Serial.println(F("Setting Spreading Factor"));
   radio.setSpreadingFactor(7);
 
@@ -199,6 +218,11 @@ void setup() {
 
 void loop() {
   IWatchdog.reload();
+  if (RxWatchdogTimeout){
+    servoPWM->setCaptureCompare(servo_channel, SERVO_MID_MICROSECOND, MICROSEC_COMPARE_FORMAT);
+    bldcPWM->setCaptureCompare(bldc_channel, 0, PERCENT_COMPARE_FORMAT);
+
+  }
   // uint32_t battery_voltage = analogRead(HV_BATT_VOLT_pin);
   // uint32_t adcRawValue = analogRead(HV_BATT_VOLT_pin);
   // uint32_t vAdc_mV_numerator = adcRawValue * vref_mv;
@@ -210,24 +234,15 @@ void loop() {
   // Serial.println(vBattery_mV);
   // check if the flag is set
   if (receivedFlag) {
+    RxWatchdogTimer->setCount(0, MICROSEC_FORMAT);
 
     // you can read received data as an Arduino String
     byte packetData[2];
     int state = radio.readData(packetData, 2);
 
     if (state == RADIOLIB_ERR_NONE) {
-      // packet was successfully received
-      // Serial.println(F("[SX1262] Received packet!"));
-      // Serial.print(F("[SX1262] Data:\t\t"));
-      // Serial.print(packetData[0] >> 1);
-      // Serial.print(",");
-      // Serial.print(packetData[0] & 0b0000001);
-      // Serial.print(",");
-      // Serial.print(packetData[1] >> 1);
-      // Serial.println(packetData[1] & 0b0000001);
-
-      // if(packetData[0] == boatAddress){
-      uint32_t servoAngle_us = mapParabolicCentered((packetData[1] >> 1), 0, 64, 127, lowerMicrosecondLimit, middleMicrosecond, upperMicrosecondLimit);
+      RxWatchdogTimeout = false;
+      servoAngle_us = mapParabolicCentered((packetData[1] >> 1), 0, 64, 127, lowerMicrosecondLimit, middleMicrosecond, upperMicrosecondLimit);
       servoPWM->setCaptureCompare(servo_channel, servoAngle_us, MICROSEC_COMPARE_FORMAT);  // 7.5%
 
       //Set the bldc PWM speed value
@@ -247,8 +262,7 @@ void loop() {
       //Set the motor enable state (bit 2)
       bool enableBool = (packetData[1] & 0b00000001) != 0;
       if (enableBool) {
-        digitalWrite(BLDC_ENABLE_pin, LOW);
-      } else {
+        digitalWrite(BLDC_ENABLE_pin, LOW);} else {
         digitalWrite(BLDC_ENABLE_pin, HIGH);
       }
 
